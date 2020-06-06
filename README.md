@@ -6,6 +6,10 @@ Monitoring is good. You can configure many different monitoring systems on your 
 
 I propose a solution. My telegram bot [t.me/TON_Validators_Bot](http://t.me/TON_Validators_Bot) does not require installation on your server. It runs in my cloud and does not make any requests to your validator node. However, he can check the time when your node signed the last block in the blockchain. If your node does not sign new blocks for a long time, you will receive a notification in the telegram. You will immediately see that your server requires attention.
 
+## Screenshots
+
+![TON_Validators_Bot Telegram Alert, where Validator not work](screenshots/screen_alerts.png)​
+
 ## What this bot can do?
 
 ####  Monitoring
