@@ -26,6 +26,8 @@ I propose a solution. My telegram bot [t.me/TON_Validators_Bot](http://t.me/TON_
  2. The bot does not interact with your server. It is completely autonomous.
  3. The bot checks the result of the validator, not the process. It is only important for him that the validator correctly signs the blocks and they are accepted by the network.
  4. The entire message history will be saved in the telegram chat history.
+ 5. Support for online monitoring of multiple addresses.
+ 6. The bot can update the last message, which shows monitoring of all addresses.
 
 ## Installation
 
