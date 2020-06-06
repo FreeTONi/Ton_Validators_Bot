@@ -28,6 +28,7 @@ I propose a solution. My telegram bot [t.me/TON_Validators_Bot](http://t.me/TON_
  4. The entire message history will be saved in the telegram chat history.
  5. Support for online monitoring of multiple addresses.
  6. The bot can update the last message, which shows monitoring of all addresses.
+ 7. Alerts auto send to telegram account.
 
 ## Installation
 

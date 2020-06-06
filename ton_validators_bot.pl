@@ -26,7 +26,7 @@ my $url = 'https://eu-central-1.large.net.ton.dev/graphql';
 my $db = DBI->connect("dbi:SQLite:dbname=FreeTON-accounts.db","","",{AutoCommit => 0});
 $db->{sqlite_unicode} = 1;
 $db->do("CREATE TABLE IF NOT EXISTS chats (chat_id NUMERIC, from_id NUMERIC, from_username TEXT, from_first_name TEXT, from_last_name TEXT, from_language_code TEXT );");
-$db->do("CREATE TABLE IF NOT EXISTS accounts (chat_id NUMERIC, account_addr TEXT, message_id NUMERIC);");
+$db->do("CREATE TABLE IF NOT EXISTS accounts (chat_id NUMERIC, account_addr TEXT, message_id NUMERIC );");
 $db->do("CREATE TABLE IF NOT EXISTS message_id (chat_id NUMERIC, message_id NUMERIC);");
 $db->commit;
 # $db->disconnect;
@@ -80,7 +80,7 @@ while (1) {
 				my %found_account = check_account($account_addr);
 				my $count = scalar(%found_account);
 				if ($count == 0) {
-					$message .= "Did not win the election\n"; 
+					$message .= "\x{274c}Did not win the election\n"; 
 					next;
 				}
 				if ( $found_account{'p32'}{'type'} eq "p32" ) {
@@ -96,13 +96,23 @@ while (1) {
 						if ($node_ids{$found_account{'p34'}{'public_key'}} eq $_) {
 							$message .= "\x{1f197}Your validator sign last block 0 seconds ago.\n" ;
 							$boom = 1;
+							my ($alert_message_id) = $db->selectrow_array("SELECT message_id FROM accounts WHERE chat_id=$chat_id AND account_addr = \'$account_addr\';");
+							if ( $alert_message_id ne 0) {
+								$db->do("UPDATE accounts SET message_id=0 WHERE chat_id=$chat_id AND account_addr = \'$account_addr\'");
+								$db->commit;
+								$api->deleteMessage({
+									chat_id => $chat_id,
+									message_id => "$alert_message_id",,
+								});
+								
+							}
 						}
 					}
 				} else {
-					my ($last_sign, $node_seq_no) = check_node_block_last_sign($node_ids{$found_account{'p34'}{'public_key'}});
-					my $sign_diff = $last_block_time - $last_sign;
-					my $seq_no_diff = $seq_no - $node_seq_no;
-					$message .= "\x{26a0}\x{fe0f}Your validator sign last block *$sign_diff* seconds ago.\nThis is *$seq_no_diff* block ago.\n";
+				#	my ($last_sign, $node_seq_no) = check_node_block_last_sign($node_ids{$found_account{'p34'}{'public_key'}});
+				#	my $sign_diff = $last_block_time - $last_sign;
+				#	my $seq_no_diff = $seq_no - $node_seq_no;
+					$message .= "\x{26a0}\x{fe0f}Your validator sign last block *many times* ago.\n";
 					$boom = 1;
 				}
 				if ($boom == 0) {
@@ -110,6 +120,19 @@ while (1) {
 					my $sign_diff = $last_block_time - $last_sign;
 					my $seq_no_diff = $seq_no - $node_seq_no;
 					$message .= "\x{26a0}\x{fe0f}Your validator sign last block *$sign_diff* seconds ago.\nThis is *$seq_no_diff* block ago.\n";
+					if ( $seq_no_diff > 10 ) {
+					my ($alert_message_id) = $db->selectrow_array("SELECT message_id FROM accounts WHERE chat_id=$chat_id AND account_addr = \'$account_addr\';");
+					if ( $alert_message_id == 0) {
+						my $send = $api->sendMessage({
+							chat_id => $chat_id,
+							text => "*\x{1f4db}ALERT!\x{1f4db}*\n\x{1f198}Your Validator sign block last time more then *10 blocks* ago.\nIt may be slow, or may be *fail*\nValidator Address is \`$account_addr\`",
+							parse_mode => "Markdown",
+						});
+						$db->do("UPDATE accounts SET message_id=$send->{result}{message_id} WHERE chat_id=$chat_id AND account_addr = \'$account_addr\'");
+						$db->commit;
+					}
+					
+					}
 				}
 			}
 			my $gmt_datestring = gmtime();
@@ -181,8 +204,8 @@ while (1) {
                 });
 				print "Send: ", Dumper $send, "\n";
 				my ($count_accounts) = $db->selectrow_array("SELECT COUNT(*) FROM accounts WHERE chat_id=$u->{message}{chat}{id} AND account_addr = \'$account_addr\';");
-				if ($count_accounts == 0) {$db->do("INSERT INTO accounts VALUES($u->{message}{chat}{id}, \'$account_addr\', $send->{result}{message_id});");}
-				if ($count_accounts > 0) {$db->do("UPDATE accounts SET message_id=$send->{result}{message_id} WHERE chat_id=$u->{message}{chat}{id} AND account_addr = \'$account_addr\';");}
+				if ($count_accounts == 0) {$db->do("INSERT INTO accounts VALUES($u->{message}{chat}{id}, \'$account_addr\', 0);");}
+				#if ($count_accounts > 0) {$db->do("UPDATE accounts SET message_id=$send->{result}{message_id} WHERE chat_id=$u->{message}{chat}{id} AND account_addr = \'$account_addr\';");}
 				my ($count_message_id) = $db->selectrow_array("SELECT COUNT(*) FROM message_id WHERE chat_id=$u->{message}{chat}{id} ;");
 				if ($count_message_id == 0) { $db->do("INSERT INTO message_id VALUES($u->{message}{chat}{id}, $send->{result}{message_id});"); }
 				if ($count_message_id > 0) {$db->do("UPDATE message_id SET message_id=$send->{result}{message_id} WHERE chat_id=$u->{message}{chat}{id}");}
