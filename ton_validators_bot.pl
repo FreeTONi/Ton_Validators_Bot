@@ -54,6 +54,7 @@ print "I am ". Dumper($me);
 
 my $timer = Timer::Simple->new();
 my $save_time = $timer->elapsed;
+my $save_h_time = $timer->elapsed;
 
 #say $api->getMe->{result}{username};
 my $start_message_en = "Hello!\nI am [FreeTON project](https://freeton.org/join) bot\nI help validators to be sure that their node works and signs FreeTON blockchain blocks correctly.\nI will automatically monitor your node and write you a message if something goes wrong.\nIn order to start monitoring - tell me your Account address\ne.g.:\n\`\`\`\n-1:11B3EA2508596241863A73A95CA5378E67746CCD6E4361580123000011112222\n\`\`\`";
@@ -64,6 +65,13 @@ my $nothing_found_account_en = "Nothing found. Your Account address is not selec
 my $updates;
 my $offset;
 while (1) {
+	if (($timer->elapsed - $save_time) > 300 ) {
+		print "You've had a minute $save_h_time " . $timer->elapsed . "\n";
+		$save_h_time = $timer->elapsed;
+		$prev_key_block_seqno = get_prev_key_block_seqno();
+		%p1p32p34p36 = get_p1p32p34p36 ();
+		%node_ids = get_node_id ();
+	}
 	if ((($timer->elapsed - $save_time) > 30 ) or 0) {
 		print "You've had a minute $save_time " . $timer->elapsed . "\n";
 		$save_time = $timer->elapsed;
@@ -100,10 +108,11 @@ while (1) {
 							if ( $alert_message_id ne 0) {
 								$db->do("UPDATE accounts SET message_id=0 WHERE chat_id=$chat_id AND account_addr = \'$account_addr\'");
 								$db->commit;
-								$api->deleteMessage({
+								my $response = eval { $api->deleteMessage({
 									chat_id => $chat_id,
 									message_id => "$alert_message_id",,
-								});
+								})}
+									or warn "Telegram Request failed with error '$@'";
 								
 							}
 						}
@@ -120,14 +129,16 @@ while (1) {
 					my $sign_diff = $last_block_time - $last_sign;
 					my $seq_no_diff = $seq_no - $node_seq_no;
 					$message .= "\x{26a0}\x{fe0f}Your validator sign last block *$sign_diff* seconds ago.\nThis is *$seq_no_diff* block ago.\n";
-					if ( $seq_no_diff > 10 ) {
+					if ( $seq_no_diff > 20 ) {
 					my ($alert_message_id) = $db->selectrow_array("SELECT message_id FROM accounts WHERE chat_id=$chat_id AND account_addr = \'$account_addr\';");
 					if ( $alert_message_id == 0) {
-						my $send = $api->sendMessage({
+						my $send;
+						my $response = eval { $send = $api->sendMessage({
 							chat_id => $chat_id,
-							text => "*\x{1f4db}ALERT!\x{1f4db}*\n\x{1f198}Your Validator sign block last time more then *10 blocks* ago.\nIt may be slow, or may be *fail*\nValidator Address is \`$account_addr\`",
+							text => "*\x{1f4db}ALERT!\x{1f4db}*\n\x{1f198}Your Validator sign block last time more then *20 blocks* ago.\nIt may be slow, or may be *fail*\nValidator Address is \`$account_addr\`",
 							parse_mode => "Markdown",
-						});
+						})}
+							or warn "Telegram Request failed with error '$@'";
 						$db->do("UPDATE accounts SET message_id=$send->{result}{message_id} WHERE chat_id=$chat_id AND account_addr = \'$account_addr\'");
 						$db->commit;
 					}
@@ -138,17 +149,21 @@ while (1) {
 			my $gmt_datestring = gmtime();
 			$message .= "\n**Updated at $gmt_datestring**\n";
 			my ($message_id) = $db->selectrow_array("SELECT message_id FROM message_id WHERE chat_id=$chat_id;");
-			$api->editMessageText({
-				chat_id => "$chat_id",
-				text => "$message",
-				message_id => "$message_id",
-				parse_mode => "Markdown",
-			});
-			print $message;
+			if ($message_id) {
+				my $response = eval { $api->editMessageText({
+					chat_id => "$chat_id",
+					text => "$message",
+					message_id => "$message_id",
+					parse_mode => "Markdown",
+				}) }
+					or warn "Telegram Request failed with error '$@'";
+				print $message;
+			}
 		}
 	}
 	
-	$updates = $api->getUpdates({timeout => 30, $offset?(offset => $offset):()});
+	my $response = eval { $updates = $api->getUpdates({timeout => 30, $offset?(offset => $offset):()})}
+		or warn "Telegram Request failed with error '$@'";
 	unless ($updates and ref $updates eq "HASH" and $updates->{ok}) {
 		warn "updates weird";
 		next;
@@ -165,11 +180,12 @@ while (1) {
 		print Dumper($u);
 		 
             if ($u->{message}{text} eq '/start' ) {
-                $api->sendMessage({
+                my $response = eval {$api->sendMessage({
                     chat_id => $u->{message}{chat}{id},
                     text => "$start_message_en",
 				    parse_mode => "Markdown",
-                });
+                })}
+					or warn "Telegram Request failed with error '$@'";
 			    next; 
             }
             if ($u->{message}{text} =~ /(-1:[\dABCDEFabcdef]{64})/ ) {
@@ -179,10 +195,11 @@ while (1) {
 				print "Count = $count \n" ;
 				
 				if ($count == 0) {
-					$api->sendMessage({
+					my $response = eval {$api->sendMessage({
 						chat_id => $u->{message}{chat}{id},
 						text => "$nothing_found_account_en",
-					});				
+					})}
+						or warn "Telegram Request failed with error '$@'";			
 					next;
 				}
 				my ($last_sign, $node_seq_no) = check_node_block_last_sign($node_ids{$found_account{'p34'}{'public_key'}});
@@ -197,11 +214,13 @@ while (1) {
 				$text .= "You Account is won *Current* election of validators!\nPublic key: \`$found_account{'p34'}{'public_key'}\`\nADNL address: \`$found_account{'p34'}{'adnl_addr'}\`\n\n" if ( $found_account{'p34'}{'type'} eq "p34" );
 				$text .= "You Account is won *NEXT* election of validators!\nPublic key: \`$found_account{'p36'}{'public_key'}\`\nADNL address: \`$found_account{'p36'}{'adnl_addr'}\`\n\n" if ( defined ($found_account{'p36'}{'type'}) );
 				$text .= "Your account last sign block have *$sign_diff* seconds ago.\nThis is *$seq_no_diff* block ago.";
-                my $send = $api->sendMessage({
+                my $send;
+				my $response = eval {$send = $api->sendMessage({
                     chat_id => $u->{message}{chat}{id},
                     text => "$text",
 					parse_mode => "Markdown",
-                });
+                })}
+					or warn "Telegram Request failed with error '$@'";
 				print "Send: ", Dumper $send, "\n";
 				my ($count_accounts) = $db->selectrow_array("SELECT COUNT(*) FROM accounts WHERE chat_id=$u->{message}{chat}{id} AND account_addr = \'$account_addr\';");
 				if ($count_accounts == 0) {$db->do("INSERT INTO accounts VALUES($u->{message}{chat}{id}, \'$account_addr\', 0);");}
@@ -218,17 +237,19 @@ while (1) {
 				my $count = scalar(@found_adnl);
 				print "Count = $count \n" ;
 				if ($count > 1) {
-					$api->sendMessage({
+					my $response = eval {$api->sendMessage({
 						chat_id => $u->{message}{chat}{id},
 						text => "$need_more_symbols_en",
-					});				
+					})}
+						or warn "Telegram Request failed with error '$@'";			
 					next;
 				}
 				if ($count == 0) {
-					$api->sendMessage({
+					my $response = eval {$api->sendMessage({
 						chat_id => $u->{message}{chat}{id},
 						text => "$nothing_found_adnl_en",
-					});				
+					})}
+						or warn "Telegram Request failed with error '$@'";			
 					next;
 				}
 				if ($count == 1) {
@@ -242,19 +263,21 @@ while (1) {
 					$text .= "*Next* election of validators!\n" if ( $found_adnl[0]{'type'} eq "p36" );
 					$text .= "Public key: \`$found_adnl[0]{'public_key'}\`\nADNL address: \`$found_adnl[0]{'adnl_addr'}\`\n\n";
 					$text .= "Your validator\'s Public key last sign block time is *$sign_diff* seconds ago.\nThis is *$seq_no_diff* block ago.";
-					$api->sendMessage({
+					my $response = eval {$api->sendMessage({
 						chat_id => $u->{message}{chat}{id},
 						text => "$text",
 						parse_mode => "Markdown",
-					});				
+					})}
+						or warn "Telegram Request failed with error '$@'";			
 					next;
 				}
             }
-		$api->sendMessage({
+		my $response = eval {$api->sendMessage({
 			chat_id => $u->{message}{chat}{id},
 			text => $sorry_message_en,
 			parse_mode => "Markdown",
-		});
+		})}
+			or warn "Telegram Request failed with error '$@'";
 	}
 }
 
